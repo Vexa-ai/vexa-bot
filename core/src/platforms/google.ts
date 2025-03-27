@@ -3,8 +3,16 @@ import { log, randomDelay } from '../utils';
 import { BotConfig } from '../types';
 
 export async function handleGoogleMeet(botConfig: BotConfig, page: Page): Promise<void> {
+  const participantsButton = 'button[data-testid="toolbar.participants"]'; // Participants panel button
+
   log('Handling Google Meet logic');
   await joinMeeting(page, botConfig.meetingUrl, botConfig.botName)
+  console.log('Starting recording...');
+  await recordMeeting(page);
+  await page.waitForSelector(participantsButton, {
+    timeout: botConfig.automaticLeave.waitingRoomTimeout,
+  });
+
 }
 
 const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
@@ -51,4 +59,61 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
   await page.waitForSelector(joinButton, { timeout: 60000 });
   await page.click(joinButton);
   log(`${botName} joined the Meeting.`);
+}
+
+async function recordMeeting(page: Page) {
+  await page.evaluate(async () => {
+    const mediaElements = Array.from(document.querySelectorAll('audio, video')).filter(
+      (el: any) => !el.paused
+    );
+    if (mediaElements.length === 0) {
+      throw new Error('No playing media elements found in the meeting page');
+    }
+    const element: any = mediaElements[0];
+    const stream = element.srcObject || element.captureStream();
+
+    if (!(stream instanceof MediaStream)) {
+      throw new Error('Unable to obtain a MediaStream from the media element');
+    }
+
+    const audioContext = new AudioContext();
+    await audioContext.resume();
+
+    const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+    const chunks: BlobPart[] = [];
+
+    recorder.ondataavailable = async (event: BlobEvent) => {
+      try {
+        if (event.data.size > 0) {
+          chunks.push(event.data);
+        }
+
+      } catch (error) {
+        console.error('Error processing data available event:', error);
+      }
+    }
+
+    recorder.onerror = (error) => {
+      console.error(error);
+      recorder.stop();
+    };
+
+    recorder.onstop = async () => {
+      const blob = new Blob(chunks, { type: 'audio/webm;codecs=opus' });
+      //todo: fix the url 
+      const res = await fetch("/api/v1/extension/audio", {
+        method: 'PUT',
+        body: blob,
+        headers: {
+          'Content-Type': 'application/octet-stream'
+        }
+      })
+      if (!res.ok) {
+        throw new Error("Error sending Audio File")
+      }
+
+    };
+
+    recorder.start();
+  })
 }

@@ -1,5 +1,5 @@
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
-import { log } from "console";
+import { log } from "./utils";
 import { chromium } from "playwright-extra";
 import { handleGoogleMeet } from "./platforms/google";
 import { browserArgs, userAgent } from "./constans";

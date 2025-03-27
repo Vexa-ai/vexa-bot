@@ -1,6 +1,6 @@
 {
   "platform": "google",
-  "meetingUrl": "https://meet.google.com/ohu-ocpg-gyj",
+  "meetingUrl": "https://meet.google.com/jsn-cjjf-ube",
   "botName": "TestBot",
   "automaticLeave": {
     "waitingRoomTimeout": 300000,
