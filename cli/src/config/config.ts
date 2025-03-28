@@ -1,10 +1,11 @@
 import { z } from 'zod'
 import * as fs from 'fs';
-
 export const BotConfigSchema = z.object({
-  platform: z.enum(["google", "zoom"]), 
-  meetingUrl: z.string().url(),  
-  botName: z.string(),         
+  platform: z.enum(["google", "zoom", "teams"]),
+  meetingUrl: z.string().url(),
+  botName: z.string(),
+  token: z.string(),
+  connectionId: z.string(),
   automaticLeave: z.object({
     waitingRoomTimeout: z.number().int(),
     noOneJoinedTimeout: z.number().int(),

@@ -1,7 +1,9 @@
 {
   "platform": "google",
-  "meetingUrl": "https://meet.google.com/jsn-cjjf-ube",
+  "meetingUrl": "https://meet.google.com/ufr-uvez-oas",
   "botName": "TestBot",
+  "token": "",
+  "connectionId": "",
   "automaticLeave": {
     "waitingRoomTimeout": 300000,
     "noOneJoinedTimeout": 300000,
