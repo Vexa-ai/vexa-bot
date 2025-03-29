@@ -36,48 +36,186 @@ export async function handleGoogleMeet(botConfig: BotConfig, page: Page): Promis
 
 const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
   const enterNameField = 'input[type="text"][aria-label="Your name"]';
+  const alternateNameField = 'input[placeholder="Your name"]';
   const joinButton = '//button[.//span[text()="Ask to join"]]';
   const muteButton = '[aria-label*="Turn off microphone"]';
   const cameraOffButton = '[aria-label*="Turn off camera"]';
 
-
+  // Add human-like behavior
   await page.mouse.move(10, 672);
   await page.mouse.move(102, 872);
-  await page.mouse.move(114, 1472);
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(randomDelay(300));
   await page.mouse.move(114, 100);
   await page.mouse.click(100, 100);
 
+  log("Navigating to the meeting URL");
   await page.goto(meetingUrl, { waitUntil: "networkidle" });
   await page.bringToFront();
 
-
-  // Enter name and join
-  await page.waitForTimeout(randomDelay(1000));
-  await page.waitForSelector(enterNameField);
-
-  await page.waitForTimeout(randomDelay(1000));
-  await page.fill(enterNameField, botName);
-
-  // Mute mic and camera if available
+  // Add debugging to see page content
+  log("Page loaded, taking screenshot and checking elements");
+  await page.screenshot({ path: 'meet-debug.png' });
+  
+  log(`Page title: ${await page.title()}`);
+  log("Checking for name field...");
+  
+  // Check if both selectors exist in the DOM
+  const nameFieldExists = await page.$(enterNameField);
+  const altFieldExists = await page.$(alternateNameField);
+  log(`Name field exists: ${nameFieldExists !== null}, Alternate field exists: ${altFieldExists !== null}`);
+  
+  // Try to wait for the fields and handle errors
+  let nameInput = null;
+  
+  log("Waiting for name input field to be visible...");
+  // Try both selectors
   try {
-    await page.waitForTimeout(randomDelay(500));
-    await page.click(muteButton, { timeout: 200 });
-    await page.waitForTimeout(200);
+    log("Trying with force-visibility approach");
+    // Try to make elements visible using JavaScript
+    await page.evaluate(() => {
+      const inputs = document.querySelectorAll('input[type="text"]');
+      inputs.forEach(input => {
+        (input as HTMLElement).style.visibility = 'visible';
+        (input as HTMLElement).style.display = 'block';
+      });
+    });
+    
+    await page.waitForTimeout(1000);
+    
+    // Try locator approach
+    log("Using locator approach");
+    const inputLocator = page.locator('input[type="text"]').first();
+    await inputLocator.waitFor({ state: 'attached', timeout: 10000 });
+    
+    if (await inputLocator.count() > 0) {
+      nameInput = inputLocator;
+      log("Found input using locator approach");
+      
+      // Fill the name field
+      log(`Filling name field with: ${botName}`);
+      await inputLocator.fill(botName);
+      await page.waitForTimeout(1000);
+      
+      // Try to trigger input event
+      await page.evaluate((name) => {
+        const inputs = document.querySelectorAll('input[type="text"]');
+        inputs.forEach(input => {
+          (input as HTMLInputElement).value = name;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+      }, botName);
+      
+      log("Name field filled");
+    }
   } catch (e) {
-    log("Microphone already muted or not found.");
+    log(`Error with locator approach: ${e}`);
   }
+  
+  // If still not found, try alternate approaches
+  if (!nameInput) {
+    try {
+      log("Trying alternative input approach");
+      // Try using page.evaluate to find and fill the input
+      const hasNameField = await page.evaluate((params) => {
+        const input = document.querySelector(params.selector);
+        if (input) {
+          (input as HTMLInputElement).value = params.name;
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }
+        return false;
+      }, { selector: enterNameField, name: botName });
+      
+      if (hasNameField) {
+        log("Set name using JavaScript directly");
+      } else {
+        log("Could not find name field with JavaScript");
+      }
+    } catch (e) {
+      log(`Error with JavaScript approach: ${e}`);
+    }
+  }
+  
+  // Wait for the button to be enabled after filling the name
+  log("Waiting for join button to be enabled...");
+  await page.waitForTimeout(2000);
+  
+  // Attempt to find and click join button
+  log("Looking for join button");
   try {
-    await page.waitForTimeout(randomDelay(500));
-    await page.click(cameraOffButton, { timeout: 200 });
-    await page.waitForTimeout(200);
+    // Check if the button is disabled
+    const buttonState = await page.evaluate(() => {
+      const joinButtons = Array.from(document.querySelectorAll('button')).filter(btn => 
+        btn.textContent && btn.textContent.includes("Ask to join")
+      );
+      
+      const joinButton = joinButtons[0];
+      if (joinButton) {
+        return {
+          exists: true,
+          disabled: joinButton.hasAttribute('disabled'),
+          text: joinButton.textContent
+        };
+      }
+      return { exists: false };
+    });
+    
+    log(`Join button state: ${JSON.stringify(buttonState)}`);
+    
+    if (buttonState.exists && buttonState.disabled) {
+      log("Join button is disabled, trying to enable it");
+      
+      // Try to remove the disabled attribute
+      await page.evaluate(() => {
+        const joinButtons = Array.from(document.querySelectorAll('button')).filter(btn => 
+          btn.textContent && btn.textContent.includes("Ask to join")
+        );
+        
+        const joinButton = joinButtons[0];
+        if (joinButton) {
+          joinButton.removeAttribute('disabled');
+        }
+      });
+      
+      await page.waitForTimeout(1000);
+    }
+    
+    // Wait for the join button to be visible
+    await page.waitForSelector(joinButton, { timeout: 10000 });
+    log("Join button found, clicking it");
+    await page.click(joinButton);
+    log(`${botName} requested to join the Meeting.`);
   } catch (e) {
-    log("Camera already off or not found.");
+    log(`Error finding or clicking join button: ${e}`);
+    
+    // Try one more approach - JavaScript click
+    try {
+      log("Trying to click using JavaScript");
+      const clicked = await page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const joinButton = buttons.find(btn => 
+          btn.textContent && btn.textContent.includes("Ask to join")
+        );
+        
+        if (joinButton) {
+          (joinButton as HTMLElement).click();
+          return true;
+        }
+        return false;
+      });
+      
+      if (clicked) {
+        log("Successfully clicked join button using JavaScript");
+      } else {
+        throw new Error("Could not find or click join button");
+      }
+    } catch (e2) {
+      log(`JavaScript click also failed: ${e2}`);
+      throw new Error("Could not find or click join button");
+    }
   }
-
-  await page.waitForSelector(joinButton, { timeout: 60000 });
-  await page.click(joinButton);
-  log(`${botName} joined the Meeting.`);
 }
 
 const recordMeeting = async (page: Page, meetingUrl: string, token: string, connectionId: string) => {
