@@ -2,9 +2,11 @@ import { Page } from 'playwright';
 import { log, randomDelay } from '../utils';
 import { BotConfig } from '../types';
 
-const leaveButton = `//button[@aria-label="Leave call"]`;
+
 
 export async function handleGoogleMeet(botConfig: BotConfig, page: Page): Promise<void> {
+  const leaveButton = `//button[@aria-label="Leave call"]`;
+
   log('Joining Google Meet');
   try {
     await joinMeeting(page, botConfig.meetingUrl, botConfig.botName)
@@ -81,16 +83,13 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
 }
 
 const recordMeeting = async (page: Page, meetingUrl: string, token: string, connectionId: string) => {
-  const meetingId = meetingUrl.split("?")[0].split("/").pop();
-  const ts = Math.floor(new Date().getTime() / 1000);
-
+  // Expose the logBot function to the browser context
   await page.exposeFunction('logBot', (msg: string) => {
     log(msg);
   });
 
-
   await page.evaluate(
-    async () => {
+    async ({ token, meetingUrl, connectionId }) => {
       await new Promise<void>((resolve, reject) => {
         try {
           (window as any).logBot("Starting recording process.");
@@ -133,7 +132,11 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
               try {
                 const blob = new Blob(chunks, { type: "audio/webm;codecs=opus" });
 
+                // Compute meetingId and ts inside the browser context
+                const meetingId = meetingUrl.split("?")[0].split("/").pop();
+                const ts = Math.floor(new Date().getTime() / 1000);
                 const uploadUrl = `https://transcription.dev.vexa.ai/api/v1/extension/audio?meeting_id=${meetingId}&connection_id=${connectionId}&token=${token}&ts=${ts}&l=1`;
+                (window as any).logBot(uploadUrl);
                 const res = await fetch(uploadUrl, {
                   method: "PUT",
                   body: blob,
@@ -161,10 +164,11 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
 
             resolve();
           };
+
           recorder.start();
           (window as any).logBot("Recorder started.");
 
-          // Click the "People" button.
+          // Click the "People" button
           const peopleButton = document.querySelector('button[aria-label^="People"]');
           if (!peopleButton) {
             recorder.stop();
@@ -172,7 +176,7 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
           }
           (peopleButton as HTMLElement).click();
 
-          // Monitor participant list every 5 seconds.
+          // Monitor participant list every 5 seconds
           let aloneTime = 0;
           const checkInterval = setInterval(() => {
             const peopleList = document.querySelector('[role="list"]');
@@ -199,7 +203,7 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
             }
           }, 5000);
 
-          // Listen for unload and visibility changes.
+          // Listen for unload and visibility changes
           window.addEventListener("beforeunload", () => {
             (window as any).logBot("Page is unloading. Stopping recorder...");
             clearInterval(checkInterval);
@@ -217,5 +221,10 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
         }
       });
     },
+    {
+      token,
+      meetingUrl,
+      connectionId
+    }
   );
 };
