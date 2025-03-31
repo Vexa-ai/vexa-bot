@@ -2,8 +2,6 @@ import { Page } from 'playwright';
 import { log, randomDelay } from '../utils';
 import { BotConfig } from '../types';
 
-
-
 export async function handleGoogleMeet(botConfig: BotConfig, page: Page): Promise<void> {
   const leaveButton = `//button[@aria-label="Leave call"]`;
 
@@ -89,7 +87,15 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
   });
 
   await page.evaluate(
-    async ({ token, meetingUrl, connectionId }) => {
+    async () => {
+      const option = {
+        token: "",
+        language: "en",
+        task: "",
+        modelSize: "small",
+        useVad: false,
+      }
+
       await new Promise<void>((resolve, reject) => {
         try {
           (window as any).logBot("Starting recording process.");
@@ -106,72 +112,88 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
             return reject(new Error("[BOT Error] Unable to obtain a MediaStream from the media element."));
           }
 
-          const audioContext = new AudioContext();
-          audioContext.resume().catch((err) => reject(new Error("[BOT Error] AudioContext resume failed: " + err.message)));
+          let dt = new Date().getTime();
+          const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            const r = (dt + Math.random() * 16) % 16 | 0;
+            dt = Math.floor(dt / 16);
+            return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+          });
 
-          const recorder = new MediaRecorder(stream, { mimeType: "audio/webm;codecs=opus" });
-          const chunks: BlobPart[] = [];
-
-          recorder.ondataavailable = (event: BlobEvent) => {
-            if (event.data.size > 0) {
-              chunks.push(event.data);
-            }
+          const socket = new WebSocket(`wss://whisperlive.dev.vexa.ai:443/websocket`);
+          let isServerReady = false;
+          let language = option.language;
+          socket.onopen = function() {
+            socket.send(
+              JSON.stringify({
+                uid: uuid,
+                language: option.language,
+                task: option.task,
+                model: option.modelSize,
+                use_vad: option.useVad
+              })
+            );
           };
 
-          recorder.onerror = (error) => {
-            recorder.stop();
-            return reject(new Error("[BOT Recorder Error] " + error.message));
-          };
+          socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data["uid"] !== uuid) return;
 
-          recorder.onstop = async () => {
-            (window as any).logBot("Recorder stopped. Preparing upload...");
-
-            if (chunks.length === 0) {
-              (window as any).logBot("[BOT Warning] No recorded audio data available. Skipping upload.");
+            if (data["status"] === "WAIT") {
+              (window as any).logBot(`Server busy: ${data["message"]}`);
+              // Optionally stop recording here if required
+            } else if (!isServerReady) {
+              isServerReady = true;
+              (window as any).logBot("Server is ready.");
+            } else if (language === null && data["language"]) {
+              (window as any).logBot(`Language detected: ${data["language"]}`);
+            } else if (data["message"] === "DISCONNECT") {
+              (window as any).logBot("Server requested disconnect.");
+              socket.close()
             } else {
-              try {
-                const blob = new Blob(chunks, { type: "audio/webm;codecs=opus" });
-
-                // Compute meetingId and ts inside the browser context
-                const meetingId = meetingUrl.split("?")[0].split("/").pop();
-                const ts = Math.floor(new Date().getTime() / 1000);
-                const uploadUrl = `https://transcription.dev.vexa.ai/api/v1/extension/audio?meeting_id=${meetingId}&connection_id=${connectionId}&token=${token}&ts=${ts}&l=1`;
-                (window as any).logBot(uploadUrl);
-                const res = await fetch(uploadUrl, {
-                  method: "PUT",
-                  body: blob,
-                  headers: { "Content-Type": "application/octet-stream" },
-                });
-
-                if (!res.ok) {
-                  return reject(new Error("[BOT Upload Error] Failed to upload audio file. Server responded with status: " + res.status));
-                }
-
-                (window as any).logBot("Recording successfully uploaded.");
-              } catch (error: any) {
-                (window as any).logBot("[BOT Error] Failed to process the recorded audio: " + error.message);
-              }
+              (window as any).logBot(`Transcription: ${JSON.stringify(data)}`);
             }
-
-            // Leave the meeting
-            const leaveBtn = document.querySelector('button[aria-label="Leave call"]');
-            if (leaveBtn) {
-              (leaveBtn as HTMLElement).click();
-              (window as any).logBot("Leave button clicked. Exiting meeting.");
-            } else {
-              (window as any).logBot("Leave button not found. Meeting might have already ended.");
-            }
-
-            resolve();
           };
 
-          recorder.start();
-          (window as any).logBot("Recorder started.");
+          socket.onclose = (event) => {
+            (window as any).logBot(
+              `WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason}`
+            );
+            resolve()
+          };
 
+          const audioDataCache = [];
+          const context = new AudioContext();
+          const mediaStream = context.createMediaStreamSource(stream);
+          const recorder = context.createScriptProcessor(4096, 1, 1);
+
+          recorder.onaudioprocess = async (event) => {
+            if (!context || !isServerReady) return;
+
+            const inputData = event.inputBuffer.getChannelData(0);
+
+            const data = new Float32Array(inputData);
+            const targetLength = Math.round(data.length * (16000 / context.sampleRate));
+            const resampledData = new Float32Array(targetLength);
+            const springFactor = (data.length - 1) / (targetLength - 1);
+            resampledData[0] = data[0];
+            resampledData[targetLength - 1] = data[data.length - 1];
+            for (let i = 1; i < targetLength - 1; i++) {
+              const index = i * springFactor;
+              const leftIndex = Math.floor(index);
+              const rightIndex = Math.ceil(index);
+              const fraction = index - leftIndex;
+              resampledData[i] = data[leftIndex] + (data[rightIndex] - data[leftIndex]) * fraction;
+            } audioDataCache.push(inputData);
+            socket.send(resampledData);
+          };
+
+          mediaStream.connect(recorder);
+          recorder.connect(context.destination);
+          mediaStream.connect(context.destination);
           // Click the "People" button
           const peopleButton = document.querySelector('button[aria-label^="People"]');
           if (!peopleButton) {
-            recorder.stop();
+            recorder.disconnect();
             return reject(new Error("[BOT Inner Error] 'People' button not found. Update the selector."));
           }
           (peopleButton as HTMLElement).click();
@@ -183,7 +205,8 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
             if (!peopleList) {
               (window as any).logBot("Participant list not found; assuming meeting ended.");
               clearInterval(checkInterval);
-              recorder.stop();
+              recorder.disconnect()
+              resolve()
               return;
             }
             const count = peopleList.childElementCount;
@@ -199,7 +222,8 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
             if (aloneTime >= 10 || count === 0) {
               (window as any).logBot("Meeting ended or bot alone for too long. Stopping recorder...");
               clearInterval(checkInterval);
-              recorder.stop();
+              recorder.disconnect();
+              resolve()
             }
           }, 5000);
 
@@ -207,13 +231,15 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
           window.addEventListener("beforeunload", () => {
             (window as any).logBot("Page is unloading. Stopping recorder...");
             clearInterval(checkInterval);
-            recorder.stop();
+            recorder.disconnect();
+            resolve()
           });
           document.addEventListener("visibilitychange", () => {
             if (document.visibilityState === "hidden") {
               (window as any).logBot("Document is hidden. Stopping recorder...");
               clearInterval(checkInterval);
-              recorder.stop();
+              recorder.disconnect();
+              resolve()
             }
           });
         } catch (error: any) {
