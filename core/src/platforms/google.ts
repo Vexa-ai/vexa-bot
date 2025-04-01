@@ -120,7 +120,14 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
           });
 
           const wsUrl = "wss://whisperlive.dev.vexa.ai/websocket";
-          const socket = new WebSocket(wsUrl);
+          (window as any).logBot(`Attempting to connect WebSocket to: ${wsUrl}`);
+          let socket: WebSocket;
+          try {
+            socket = new WebSocket(wsUrl);
+          } catch (e: any) {
+            (window as any).logBot(`Error creating WebSocket: ${e.message}`);
+            return reject(new Error(`WebSocket creation failed: ${e.message}`));
+          }
           let isServerReady = false;
           let language = option.language;
           socket.onopen = function() {
@@ -137,6 +144,7 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
           };
 
           socket.onmessage = (event) => {
+            (window as any).logBot("Raw WebSocket message received: " + event.data);
             (window as any).logBot("Received message: " + event.data);
             const data = JSON.parse(event.data);
             if (data["uid"] !== uuid) return;
@@ -155,6 +163,10 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
             } else {
               (window as any).logBot(`Transcription: ${JSON.stringify(data)}`);
             }
+          };
+
+          socket.onerror = (event) => {
+            (window as any).logBot(`WebSocket error: ${JSON.stringify(event)}`);
           };
 
           socket.onclose = (event) => {
