@@ -1,62 +1,47 @@
 # Vexa Bot 
 
 ## Prerequisites
-- Node.js and npm
+- Node.js (v16 or higher) and npm
 - Xvfb (X Virtual Framebuffer) for running in headless environments
   - Install on Ubuntu/Debian: `sudo apt-get install xvfb`
   - Install on CentOS/RHEL: `sudo yum install xvfb`
 
-## Meet Bot CLI Tool  (Development, Testing)
+## Installation
 
-## Install dependencies
-Install Dependencies
-### For Core
-1.Navigate to the core directory and run:
+### 1. Install Core Dependencies
+First, build and install the core package:
 ```bash
+# Navigate to the core directory
+cd core
+
+# Install dependencies
 npm install
-```
-2. Build the core:
-```bash
+
+# Build the core package
 npm run build
 ```
 
-### For CLI
-3. Navigate to the cli directory and run
+### 2. Install CLI Dependencies
+Next, set up the CLI tool:
 ```bash
+# Navigate to the cli directory
+cd ../cli
+
+# Install dependencies
 npm install
+
+# Make the dice script executable
+chmod +x scripts/dice.sh
 ```
-4. Create a config file in JSON format (e.g., configs/meet-bot.json) like this:
-```json
-{
-  "platform": "google",
-  "meetingUrl": "https://meet.google.com/xxx-xxxx-xxx",
-  "botName": "TestBot",
-  "token": "",
-  "connectionId": "",
-  "automaticLeave": {
-    "waitingRoomTimeout": 300000,
-    "noOneJoinedTimeout": 300000,
-    "everyoneLeftTimeout": 300000
-  }
-}
-```
-4. Run the CLI with:
-```bash
-npm run cli <config path>
-```
-example 
-```bash
-npm run cli configs/meet-bot.json
-```
-**Note: This is a temporary setup and I will improve it later.**
 
 ## Configuration
-Create a config file in JSON format (e.g., configs/meet-bot.json):
+Create a configuration file in the `cli/configs` directory (e.g., `configs/meet-bot.json`):
+
 ```json
 {
   "platform": "google",
   "meetingUrl": "https://meet.google.com/xxx-xxxx-xxx",
-  "botName": "TestBot",
+  "botName": "VexaBot",
   "token": "",
   "connectionId": "",
   "automaticLeave": {
@@ -67,19 +52,69 @@ Create a config file in JSON format (e.g., configs/meet-bot.json):
 }
 ```
 
+### Configuration Options
+- `platform`: Currently supports "google" for Google Meet
+- `meetingUrl`: The full URL of the meeting to join
+- `botName`: Name that will be displayed in the meeting
+- `automaticLeave`: Timeouts in milliseconds for different scenarios
+  - `waitingRoomTimeout`: How long to wait in the waiting room
+  - `noOneJoinedTimeout`: How long to wait if no one joins
+  - `everyoneLeftTimeout`: How long to stay after everyone leaves
+
 ## Running the Bot
-### On Systems with Display
+
+### Using the Dice Command (Recommended)
+The easiest way to run the bot is using the `dice.sh` script:
+
 ```bash
-npm run cli configs/meet-bot.json
+# Navigate to the cli directory
+cd cli
+
+# Run the bot with your config file
+./scripts/dice.sh configs/meet-bot.json
 ```
 
-### On Headless Servers (without display)
-Using Xvfb to create a virtual display:
+### Manual Running (Alternative)
+If you prefer to run the bot manually:
+
+#### On Systems with Display
+If you have a graphical environment:
 ```bash
-xvfb-run --server-args="-screen 0 1280x720x24" npm run cli configs/meet-bot.json
+npm run cli -- -c configs/meet-bot.json
+```
+
+#### On Headless Servers (without display)
+For servers without a display, use Xvfb:
+```bash
+DISPLAY=:99 xvfb-run -a --server-args="-screen 0 1280x720x24" npm run cli -- -c configs/meet-bot.json
 ```
 
 ## Troubleshooting
-- If the bot fails to interact with elements, check the debug screenshot at `meet-debug.png`
-- For browser detection issues, you may need to update the anti-detection measures in `src/index.ts`
-- If the bot fails to join, ensure the meeting URL is valid and accessible
+
+### Common Issues
+1. **X Server Error**: If you see "Missing X server or $DISPLAY", make sure to:
+   - Use the `dice.sh` script which handles Xvfb configuration automatically
+   - Or use `xvfb-run` on headless systems
+   - Install Xvfb if not already installed
+
+2. **Browser Launch Failed**: If the browser fails to launch:
+   - Check if you're using the correct command for your environment (headless vs with display)
+   - Ensure all dependencies are properly installed
+   - Try running with elevated permissions if necessary
+
+3. **Meeting Access Issues**: If the bot can't join the meeting:
+   - Verify the meeting URL is correct and accessible
+   - Check if the meeting requires authentication
+   - Ensure the meeting allows external participants
+
+### Debug Tips
+- Check the browser debug screenshot at `meet-debug.png` if available
+- Look for error messages in the console output
+- Ensure all dependencies are properly installed and built
+- Verify the configuration file is properly formatted JSON
+
+## Development Notes
+- The bot uses Playwright for browser automation
+- All browser interactions are handled through the core package
+- The CLI provides a simple interface to the core functionality
+- The `dice.sh` script provides a convenient way to run the bot with proper Xvfb configuration 
