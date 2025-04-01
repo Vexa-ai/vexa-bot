@@ -41,3 +41,26 @@ example
 npm run cli configs/meet-bot.json
 ```
 **Note: This is a temporary setup and I will improve it later.**
+
+## How to Run the Bot with Docker for Production
+
+#### 1. Build the Docker Image
+
+Before running the bot, you need to build the Docker image. Navigate to the `core` directory  (where the Dockerfile is located) and run:
+```bash
+docker build -t vexa-bot .
+```
+This command will create a Docker image named vexa-bot.
+#### 2. Run the Bot Container
+
+Once the image is built, you can start the bot using Docker. Pass the bot configuration as an environment variable:
+```bash
+docker run -e BOT_CONFIG='{"platform": "google", "meetingUrl": "https://meet.google.com/ixx-xxx-xxx", "botName": "TestBot", "token": "", "connectionId": "", "automaticLeave": {"waitingRoomTimeout": 300000, "noOneJoinedTimeout": 300000, "everyoneLeftTimeout": 300000}}' vexa-bot
+```
+##### Notes:
+
+- Ensure the BOT_CONFIG JSON is properly formatted and wrapped in single quotes (') to avoid issues.
+
+- The bot will launch inside the Docker container and join the specified meeting.
+
+- You can replace the values in BOT_CONFIG to customize the bot's behavior.
