@@ -119,10 +119,12 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
             return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
           });
 
-          const socket = new WebSocket(`wss://whisperlive.dev.vexa.ai:443/websocket`);
+          const wsUrl = "wss://whisperlive.dev.vexa.ai/websocket";
+          const socket = new WebSocket(wsUrl);
           let isServerReady = false;
           let language = option.language;
           socket.onopen = function() {
+            (window as any).logBot("WebSocket connection opened.");
             socket.send(
               JSON.stringify({
                 uid: uuid,
@@ -135,6 +137,7 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
           };
 
           socket.onmessage = (event) => {
+            (window as any).logBot("Received message: " + event.data);
             const data = JSON.parse(event.data);
             if (data["uid"] !== uuid) return;
 
@@ -158,7 +161,6 @@ const recordMeeting = async (page: Page, meetingUrl: string, token: string, conn
             (window as any).logBot(
               `WebSocket connection closed. Code: ${event.code}, Reason: ${event.reason}`
             );
-            resolve()
           };
 
           const audioDataCache = [];
