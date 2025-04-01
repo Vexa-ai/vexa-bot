@@ -18,19 +18,45 @@ export async function runBot(botConfig: BotConfig): Promise<void> {
 
   // Launch browser with stealth configuration
   const browser = await chromium.launch({
-    headless: false,
-    args: browserArgs,
+    headless: false, // Use headed mode for Google Meet as it tends to detect headless browsers
+    args: [
+      ...browserArgs,
+      "--disable-blink-features=AutomationControlled"
+    ]
   });
 
   // Create a new page with permissions and viewport
   const context = await browser.newContext({
     permissions: ["camera", "microphone"],
-    userAgent: userAgent,
-    viewport: {
-      width: 1280,
-      height: 720
-    }
-  })
+    userAgent,
+    viewport: { width: 1280, height: 720 },
+    screen: { width: 1280, height: 720 },
+    deviceScaleFactor: 1,
+    isMobile: false,
+    hasTouch: false
+  });
+  
+  // More advanced anti-detection
+  await context.addInitScript(() => {
+    // Override permissions
+    const originalQuery = window.navigator.permissions.query;
+    window.navigator.permissions.query = (parameters: any) => {
+      return Promise.resolve({ state: "granted" } as PermissionStatus);
+    };
+    
+    // Plugins and mime types
+    Object.defineProperty(navigator, 'plugins', {
+      get: () => {
+        return [{
+          0: {type: "application/pdf"},
+          name: "PDF Viewer",
+          description: "Portable Document Format",
+          filename: "internal-pdf-viewer"
+        }]
+      },
+    });
+  });
+  
   const page = await context.newPage();
 
   // Setup anti-detection measures
