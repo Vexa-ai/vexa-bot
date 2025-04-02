@@ -35,8 +35,8 @@ export async function handleGoogleMeet(botConfig: BotConfig, page: Page): Promis
     }
 
     log("Successfully admitted to the meeting, starting recording");
-    // Now start the actual recording
-    await startRecording(page, botConfig.meetingUrl, botConfig.token, botConfig.connectionId);
+    // Pass platform from botConfig to startRecording
+    await startRecording(page, botConfig.meetingUrl, botConfig.token, botConfig.connectionId, botConfig.platform);
   } catch (error: any) {
     console.error(error.message)
     return
@@ -109,10 +109,10 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
 }
 
 // Modified to have only the actual recording functionality
-const startRecording = async (page: Page, meetingUrl: string, token: string, connectionId: string) => {
+const startRecording = async (page: Page, meetingUrl: string, token: string, connectionId: string, platform: string) => {
   log("Starting actual recording with WebSocket connection");
   
-  await page.evaluate(async ({ meetingUrl, token, connectionId }) => {
+  await page.evaluate(async ({ meetingUrl, token, connectionId, platform }) => {
     const option = {
       token: token,
       language: "en",
@@ -137,13 +137,12 @@ const startRecording = async (page: Page, meetingUrl: string, token: string, con
           return reject(new Error("[BOT Error] Unable to obtain a MediaStream from the media element."));
         }
 
-        // Create a structured identifier based on meeting details
-        // This ensures consistency across the system
-        const structuredId = `google_meet_${btoa(meetingUrl)}_${connectionId}`;
+        // Create a structured identifier using the passed platform
+        const structuredId = `${platform}_${btoa(meetingUrl)}_${connectionId}`;
 
         // WebSocket connection with retry mechanism
         const wsUrl = "ws://whisperlive-trt:9090";
-        (window as any).logBot(`Attempting to connect WebSocket to: ${wsUrl}`);
+        (window as any).logBot(`Attempting to connect WebSocket to: ${wsUrl} with platform: ${platform}`);
         
         let socket: WebSocket | null = null;
         let isServerReady = false;
@@ -178,7 +177,7 @@ const startRecording = async (page: Page, meetingUrl: string, token: string, con
                     task: option.task,
                     model: option.modelSize,
                     use_vad: option.useVad,
-                    platform: "google_meet",
+                    platform: platform,
                     meeting_url: meetingUrl,
                     token: token
                   })
@@ -348,11 +347,11 @@ const startRecording = async (page: Page, meetingUrl: string, token: string, con
         return reject(new Error("[BOT Error] " + error.message));
       }
     });
-  }, { meetingUrl, token, connectionId });
+  }, { meetingUrl, token, connectionId, platform });
 };
 
 // Keep the original recordMeeting for backward compatibility
-const recordMeeting = async (page: Page, meetingUrl: string, token: string, connectionId: string) => {
+const recordMeeting = async (page: Page, meetingUrl: string, token: string, connectionId: string, platform: string) => {
   await prepareForRecording(page);
-  await startRecording(page, meetingUrl, token, connectionId);
+  await startRecording(page, meetingUrl, token, connectionId, platform);
 };
