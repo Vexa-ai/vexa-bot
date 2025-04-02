@@ -68,21 +68,20 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
   const muteButton = '[aria-label*="Turn off microphone"]';
   const cameraOffButton = '[aria-label*="Turn off camera"]';
 
-
-  await page.mouse.move(10, 672);
-  await page.mouse.move(102, 872);
-  await page.mouse.move(114, 1472);
-  await page.waitForTimeout(300);
-  await page.mouse.move(114, 100);
-  await page.mouse.click(100, 100);
-
   await page.goto(meetingUrl, { waitUntil: "networkidle" });
   await page.bringToFront();
 
+  // Add a longer, fixed wait after navigation for page elements to settle
+  log("Waiting for page elements to settle after navigation...");
+  await page.waitForTimeout(5000); // Wait 5 seconds
 
   // Enter name and join
-  await page.waitForTimeout(randomDelay(1000));
-  await page.waitForSelector(enterNameField);
+  // Keep the random delay before interacting, but ensure page is settled first
+  await page.waitForTimeout(randomDelay(1000)); 
+  log("Attempting to find name input field...");
+  // Increase timeout drastically
+  await page.waitForSelector(enterNameField, { timeout: 120000 }); // 120 seconds
+  log("Name input field found.");
 
   await page.waitForTimeout(randomDelay(1000));
   await page.fill(enterNameField, botName);
@@ -115,10 +114,10 @@ const startRecording = async (page: Page, meetingUrl: string, token: string, con
   await page.evaluate(async ({ meetingUrl, token, connectionId, platform }) => {
     const option = {
       token: token,
-      language: "en",
+      language: "ru",
       task: "",
-      modelSize: "small",
-      useVad: false,
+      modelSize: "medium",
+      useVad: true,
     }
 
     await new Promise<void>((resolve, reject) => {
