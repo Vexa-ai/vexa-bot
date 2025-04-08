@@ -185,7 +185,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
                 // into the page.evaluate scope from the outer botConfig
                 const handshakePayload = {
                     uid: structuredId,       // From earlier construction based on nativeMeetingId/connectionId
-                    language: "ru",          // Literal value
+                    language: null,          // *** CHANGED from "ru" to null ***
                     task: "transcribe",     // Literal value - Ensure this is required
                     model: "medium",       // Literal value or from config if needed
                     use_vad: true,           // Literal value or from config if needed
