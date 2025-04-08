@@ -5,6 +5,11 @@ import { BotConfig } from '../types';
 export async function handleGoogleMeet(botConfig: BotConfig, page: Page): Promise<void> {
   const leaveButton = `//button[@aria-label="Leave call"]`;
 
+  if (!botConfig.meetingUrl) {
+    log('Error: Meeting URL is required for Google Meet but is null.');
+    return;
+  }
+
   log('Joining Google Meet');
   try {
     await joinMeeting(page, botConfig.meetingUrl, botConfig.botName)
@@ -36,7 +41,7 @@ export async function handleGoogleMeet(botConfig: BotConfig, page: Page): Promis
 
     log("Successfully admitted to the meeting, starting recording");
     // Pass platform from botConfig to startRecording
-    await startRecording(page, botConfig.meetingUrl, botConfig.token, botConfig.connectionId, botConfig.platform);
+    await startRecording(page, botConfig);
   } catch (error: any) {
     console.error(error.message)
     return
@@ -108,14 +113,21 @@ const joinMeeting = async (page: Page, meetingUrl: string, botName: string) => {
 }
 
 // Modified to have only the actual recording functionality
-const startRecording = async (page: Page, meetingUrl: string, token: string, connectionId: string, platform: string) => {
+const startRecording = async (page: Page, botConfig: BotConfig) => {
+  // Destructure needed fields from botConfig
+  const { meetingUrl, token, connectionId, platform, nativeMeetingId } = botConfig; // nativeMeetingId is now in BotConfig type
+
   log("Starting actual recording with WebSocket connection");
-  
-  await page.evaluate(async ({ meetingUrl, token, connectionId, platform }) => {
+
+  // Pass the necessary config fields into the page context
+  // Add type assertion for the object passed to evaluate
+  await page.evaluate(async (config: BotConfig) => {
+    // Destructure inside evaluate with types if needed, or just use config.* directly
+    const { meetingUrl, token, connectionId, platform, nativeMeetingId } = config;
+
     const option = {
-      token: token,
-      language: "ru",
-      task: "",
+      language: null,
+      task: "transcribe",
       modelSize: "medium",
       useVad: true,
     }
@@ -136,11 +148,11 @@ const startRecording = async (page: Page, meetingUrl: string, token: string, con
           return reject(new Error("[BOT Error] Unable to obtain a MediaStream from the media element."));
         }
 
-        // Create a structured identifier using the passed platform
-        const structuredId = `${platform}_${btoa(meetingUrl)}_${connectionId}`;
+        // Ensure meetingUrl is not null before using btoa
+        const uniquePart = connectionId || btoa(nativeMeetingId || meetingUrl || ''); // Added || '' fallback for null meetingUrl
+        const structuredId = `${platform}_${uniquePart}`;
 
-        // WebSocket connection with retry mechanism
-        const wsUrl = "ws://whisperlive-trt:9090";
+        const wsUrl = "ws://whisperlive:9090";
         (window as any).logBot(`Attempting to connect WebSocket to: ${wsUrl} with platform: ${platform}`);
         
         let socket: WebSocket | null = null;
@@ -148,9 +160,8 @@ const startRecording = async (page: Page, meetingUrl: string, token: string, con
         let language = option.language;
         let retryCount = 0;
         const maxRetries = 5;
-        const retryDelay = 2000; // 2 seconds initial delay, will increase exponentially
+        const retryDelay = 2000;
         
-        // Function to create and setup the WebSocket
         const setupWebSocket = () => {
           try {
             if (socket) {
@@ -166,21 +177,29 @@ const startRecording = async (page: Page, meetingUrl: string, token: string, con
             
             socket.onopen = function() {
               (window as any).logBot("WebSocket connection opened.");
-              retryCount = 0; // Reset retry count on successful connection
-              
+              retryCount = 0;
+
               if (socket) {
-                socket.send(
-                  JSON.stringify({
-                    uid: structuredId,
-                    language: option.language,
-                    task: option.task,
-                    model: option.modelSize,
-                    use_vad: option.useVad,
-                    platform: platform,
-                    meeting_url: meetingUrl,
-                    token: token
-                  })
-                );
+                // Construct the handshake message DIRECTLY here
+                // Ensure platform, token, nativeMeetingId, meetingUrl are correctly passed
+                // into the page.evaluate scope from the outer botConfig
+                const handshakePayload = {
+                    uid: structuredId,       // From earlier construction based on nativeMeetingId/connectionId
+                    language: "ru",          // Literal value
+                    task: "transcribe",     // Literal value - Ensure this is required
+                    model: "medium",       // Literal value or from config if needed
+                    use_vad: true,           // Literal value or from config if needed
+                    platform: platform,      // External platform name passed into evaluate
+                    token: token,            // User token passed into evaluate
+                    meeting_id: nativeMeetingId, // Native ID passed into evaluate
+                    meeting_url: meetingUrl  // Meeting URL passed into evaluate
+                };
+
+                const jsonPayload = JSON.stringify(handshakePayload);
+
+                // Log the exact payload being sent
+                (window as any).logBot(`DEBUG: Sending Handshake Payload: ${jsonPayload}`);
+                socket.send(jsonPayload);
               }
             };
 
@@ -188,13 +207,13 @@ const startRecording = async (page: Page, meetingUrl: string, token: string, con
               (window as any).logBot("Received message: " + event.data);
               const data = JSON.parse(event.data);
               if (data["uid"] !== structuredId) return;
-
-              if (data["status"] === "WAIT") {
-                (window as any).logBot(`Server busy: ${data["message"]}`);
-                // Optionally stop recording here if required
+              if (data["status"] === "ERROR") {
+                 (window as any).logBot(`WebSocket Server Error: ${data["message"]}`);
+              } else if (data["status"] === "WAIT") {
+                 (window as any).logBot(`Server busy: ${data["message"]}`);
               } else if (!isServerReady) {
-                isServerReady = true;
-                (window as any).logBot("Server is ready.");
+                 isServerReady = true;
+                 (window as any).logBot("Server is ready.");
               } else if (language === null && data["language"]) {
                 (window as any).logBot(`Language detected: ${data["language"]}`);
               } else if (data["message"] === "DISCONNECT") {
@@ -249,7 +268,6 @@ const startRecording = async (page: Page, meetingUrl: string, token: string, con
           }
         };
         
-        // Initial WebSocket setup
         setupWebSocket();
 
         const audioDataCache = [];
@@ -258,13 +276,12 @@ const startRecording = async (page: Page, meetingUrl: string, token: string, con
         const recorder = context.createScriptProcessor(4096, 1, 1);
 
         recorder.onaudioprocess = async (event) => {
-          // Skip processing if any required component is missing or WebSocket is not open
-          if (!context || !isServerReady) return;
-          if (!socket) return;
-          if (socket.readyState !== WebSocket.OPEN) return;
-
+          // Check if server is ready AND socket is open
+          if (!isServerReady || !socket || socket.readyState !== WebSocket.OPEN) {
+               // (window as any).logBot("WS not ready or closed, skipping audio data send."); // Optional debug log
+               return;
+          }
           const inputData = event.inputBuffer.getChannelData(0);
-
           const data = new Float32Array(inputData);
           const targetLength = Math.round(data.length * (16000 / context.sampleRate));
           const resampledData = new Float32Array(targetLength);
@@ -277,13 +294,11 @@ const startRecording = async (page: Page, meetingUrl: string, token: string, con
             const rightIndex = Math.ceil(index);
             const fraction = index - leftIndex;
             resampledData[i] = data[leftIndex] + (data[rightIndex] - data[leftIndex]) * fraction;
-          } 
-          audioDataCache.push(inputData);
-          
-          // Final safety check before sending
-          if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(resampledData);
           }
+          // Send resampledData
+           if (socket && socket.readyState === WebSocket.OPEN) { // Double check before sending
+                socket.send(resampledData);
+           }
         };
 
         mediaStream.connect(recorder);
@@ -346,11 +361,25 @@ const startRecording = async (page: Page, meetingUrl: string, token: string, con
         return reject(new Error("[BOT Error] " + error.message));
       }
     });
-  }, { meetingUrl, token, connectionId, platform });
+  }, botConfig as any); // Use type assertion to pass BotConfig into evaluate
 };
 
-// Keep the original recordMeeting for backward compatibility
-const recordMeeting = async (page: Page, meetingUrl: string, token: string, connectionId: string, platform: string) => {
+// Remove the compatibility shim 'recordMeeting' if no longer needed,
+// otherwise, ensure it constructs a valid BotConfig object.
+// Example if keeping:
+/*
+const recordMeeting = async (page: Page, meetingUrl: string, token: string, connectionId: string, platform: "google_meet" | "zoom" | "teams") => {
   await prepareForRecording(page);
-  await startRecording(page, meetingUrl, token, connectionId, platform);
+  // Construct a minimal BotConfig - adjust defaults as needed
+  const dummyConfig: BotConfig = {
+      platform: platform,
+      meetingUrl: meetingUrl,
+      botName: "CompatibilityBot",
+      token: token,
+      connectionId: connectionId,
+      nativeMeetingId: "", // Might need to derive this if possible
+      automaticLeave: { waitingRoomTimeout: 300000, noOneJoinedTimeout: 300000, everyoneLeftTimeout: 300000 },
+  };
+  await startRecording(page, dummyConfig);
 };
+*/

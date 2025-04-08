@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import * as fs from 'fs';
 export const BotConfigSchema = z.object({
-  platform: z.enum(["google", "zoom", "teams"]),
+  platform: z.enum(["google_meet", "zoom", "teams"]),
   meetingUrl: z.string().url(),
   botName: z.string(),
   token: z.string(),

@@ -1,5 +1,5 @@
 {
-  "platform": "google",
+  "platform": "google_meet",
   "meetingUrl": "https://meet.google.com/eug-hcgq-xeb",
   "botName": "TestBot",
   "token": "",

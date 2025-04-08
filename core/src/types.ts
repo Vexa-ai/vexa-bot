@@ -1,12 +1,14 @@
 export type BotConfig = {
-  platform: "google" | "zoom" | "teams",
-  meetingUrl: string,
+  platform: "google_meet" | "zoom" | "teams",
+  meetingUrl: string | null,
   botName: string,
-  token:string,
+  token: string,
   connectionId: string,
+  nativeMeetingId: string,
   automaticLeave: {
     waitingRoomTimeout: number,
     noOneJoinedTimeout: number,
     everyoneLeftTimeout: number
-  }
+  },
+  meeting_id?: number
 }

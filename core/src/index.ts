@@ -50,19 +50,22 @@ export async function runBot(botConfig: BotConfig): Promise<void> {
     Object.defineProperty(window, "outerHeight", { get: () => 1080 });
   });
 
+  // Switch based on the *external* platform name received in botConfig
   switch (platform) {
-    case 'google':
+    case 'google_meet': // Use external name
       await handleGoogleMeet(botConfig, page)
       break;
-    case 'zoom':
+    case 'zoom': // External name
       // todo
       //await handleMeet(page);
       break;
-    case 'teams':
+    case 'teams': // External name
       // todo
       //  await handleTeams(page);
       break;
     default:
+      // Log the unexpected platform value
+      log(`Error: Unsupported platform received: ${platform}`);
       throw new Error(`Unsupported platform: ${platform}`);
   }
   await browser.close();

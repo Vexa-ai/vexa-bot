@@ -22,7 +22,7 @@ npm install
 4. Create a config file in JSON format (e.g., configs/meet-bot.json) like this:
 ```json
 {
-  "platform": "google",
+  "platform": "google_meet",
   "meetingUrl": "https://meet.google.com/xxxx",
   "botName": "TestBot",
   "automaticLeave": {
@@ -55,7 +55,7 @@ This command will create a Docker image named vexa-bot.
 
 Once the image is built, you can start the bot using Docker. Pass the bot configuration as an environment variable:
 ```bash
-docker run -e BOT_CONFIG='{"platform": "google", "meetingUrl": "https://meet.google.com/xcb-tssj-qjc", "botName": "Vexa", "token": "123", "connectionId": "", "automaticLeave": {"waitingRoomTimeout": 300000, "noOneJoinedTimeout": 300000, "everyoneLeftTimeout": 300000}}' vexa-bot
+docker run -e BOT_CONFIG='{"platform": "google_meet", "meetingUrl": "https://meet.google.com/xcb-tssj-qjc", "botName": "Vexa", "token": "123", "connectionId": "", "automaticLeave": {"waitingRoomTimeout": 300000, "noOneJoinedTimeout": 300000, "everyoneLeftTimeout": 300000}}' vexa-bot
 ```
 ##### Notes:
 
