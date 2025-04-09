@@ -141,12 +141,37 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
         if (mediaElements.length === 0) {
           return reject(new Error("[BOT Error] No active media elements found. Ensure the meeting media is playing."));
         }
-        const element: any = mediaElements[0];
+        
+        // NEW: Create audio context and destination for mixing multiple streams
+        (window as any).logBot(`Found ${mediaElements.length} active media elements.`);
+        const audioContext = new AudioContext();
+        const destinationNode = audioContext.createMediaStreamDestination();
+        let sourcesConnected = 0;
 
-        const stream = element.srcObject || element.captureStream();
-        if (!(stream instanceof MediaStream)) {
-          return reject(new Error("[BOT Error] Unable to obtain a MediaStream from the media element."));
+        // NEW: Connect all media elements to the destination node
+        mediaElements.forEach((element: any, index: number) => {
+          try {
+            const elementStream = element.srcObject || (element.captureStream && element.captureStream()) || 
+                                 (element.mozCaptureStream && element.mozCaptureStream());
+            
+            if (elementStream instanceof MediaStream && elementStream.getAudioTracks().length > 0) {
+              const sourceNode = audioContext.createMediaStreamSource(elementStream);
+              sourceNode.connect(destinationNode);
+              sourcesConnected++;
+              (window as any).logBot(`Connected audio stream from element ${index+1}/${mediaElements.length}.`);
+            }
+          } catch (error: any) {
+            (window as any).logBot(`Could not connect element ${index+1}: ${error.message}`);
+          }
+        });
+
+        if (sourcesConnected === 0) {
+          return reject(new Error("[BOT Error] Could not connect any audio streams. Check media permissions."));
         }
+
+        // Use the combined stream instead of a single element's stream
+        const stream = destinationNode.stream;
+        (window as any).logBot(`Successfully combined ${sourcesConnected} audio streams.`);
 
         // Ensure meetingUrl is not null before using btoa
         const uniquePart = connectionId || btoa(nativeMeetingId || meetingUrl || ''); // Added || '' fallback for null meetingUrl
@@ -270,9 +295,11 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
         
         setupWebSocket();
 
+        // FIXED: Revert to original audio processing that works with whisperlive
+        // but use our combined stream as the input source
         const audioDataCache = [];
         const context = new AudioContext();
-        const mediaStream = context.createMediaStreamSource(stream);
+        const mediaStream = context.createMediaStreamSource(stream); // Use our combined stream
         const recorder = context.createScriptProcessor(4096, 1, 1);
 
         recorder.onaudioprocess = async (event) => {
@@ -301,10 +328,12 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
            }
         };
 
+        // Connect the audio processing pipeline
         mediaStream.connect(recorder);
         recorder.connect(context.destination);
-        mediaStream.connect(context.destination);
         
+        (window as any).logBot("Audio processing pipeline connected and sending data.");
+
         // Click the "People" button
         const peopleButton = document.querySelector('button[aria-label^="People"]');
         if (!peopleButton) {
@@ -361,7 +390,7 @@ const startRecording = async (page: Page, botConfig: BotConfig) => {
         return reject(new Error("[BOT Error] " + error.message));
       }
     });
-  }, botConfig as any); // Use type assertion to pass BotConfig into evaluate
+  }, botConfig);
 };
 
 // Remove the compatibility shim 'recordMeeting' if no longer needed,
